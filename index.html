@@ -123,7 +123,17 @@
     display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
     padding:2px 7px; border-radius:5px; background:var(--navy); color:var(--gold-light);
   }
-
+.doc-pending-tag{
+  display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+  padding:2px 7px; border-radius:5px; background:var(--rejected-bg); color:var(--rejected);
+}
+.contact-icons{display:flex; gap:6px; flex-shrink:0;}
+.contact-icons a{
+  width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:14px; text-decoration:none; flex-shrink:0;
+}
+.contact-icons a.call-icon{background:var(--navy); color:var(--gold-light);}
+.contact-icons a.whatsapp-icon{background:#25D366; color:#fff;}
   .chip-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
   .chip{font-size:11px; font-weight:600; padding:4px 9px; border-radius:20px; white-space:nowrap;}
   .chip.process{background:var(--process-bg); color:var(--process);}
@@ -260,6 +270,11 @@
         <option value="Disbursed">Disbursed</option>
         <option value="Rejected">Rejected</option>
       </select>
+      <select id="docFilter" onchange="renderLeads()">
+        <option value="">All Documents</option>
+        <option value="Pending">Documents Pending</option>
+        <option value="Submitted">Documents Submitted</option>
+      </select>
     </div>
     <main><div id="leadsContainer"><div class="empty-state">Loading leads…</div></div></main>
   </div>
@@ -387,12 +402,14 @@ function renderLeads() {
   const q = document.getElementById("searchBox").value.toLowerCase();
   const productF = document.getElementById("productFilter").value;
   const statusF = document.getElementById("statusFilter").value;
+  const docF = document.getElementById("docFilter").value;
   const container = document.getElementById("leadsContainer");
 
   let leads = ALL_LEADS.filter(l => {
     if (q && !((l.name||"").toLowerCase().includes(q) || (l.companyName||"").toLowerCase().includes(q) || (l.mobile||"").includes(q))) return false;
     if (productF && l.product !== productF) return false;
     if (statusF && !(l.pipeline||[]).some(p => p.status === statusF)) return false;
+    if (docF && l.documentStatus !== docF) return false;
     return true;
   });
 
@@ -405,6 +422,12 @@ function renderLeads() {
     const idx = ALL_LEADS.indexOf(l);
     const chips = (l.pipeline||[]).map(p => `<span class="chip ${chipClass(p.status)}">${p.lender}: ${p.status}</span>`).join("");
     const sentTo = (l.sentToDsas && l.sentToDsas.length) ? `<div class="sent-to-line">Sent to: <b>${l.sentToDsas.join(", ")}</b></div>` : "";
+    const cleanMobile = (l.mobile || "").replace(/\D/g,"");
+    const contactIcons = cleanMobile ? `
+        <div class="contact-icons" onclick="event.stopPropagation()">
+          <a class="call-icon" href="tel:${cleanMobile}" title="Call">📞</a>
+          <a class="whatsapp-icon" href="https://wa.me/91${cleanMobile}" target="_blank" title="WhatsApp">💬</a>
+        </div>` : "";
     return `
       <div class="lead-card ${overallStatusClass(l.pipeline)}" onclick="openSheet(${idx})">
         <div class="lead-top">
@@ -412,13 +435,17 @@ function renderLeads() {
             <div class="lead-name">${l.name || "—"}</div>
             ${l.companyName ? `<div class="lead-company">${l.companyName}</div>` : ""}
           </div>
-          <div class="lead-amount">₹${l.loanAmount || "—"}</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="lead-amount">₹${l.loanAmount || "—"}</div>
+            ${contactIcons}
+          </div>
         </div>
         <div class="lead-meta">
           <span>${l.product || "—"} · ${l.category || "—"}</span>
           <span>${l.mobile || ""}</span>
           <span class="partner-tag ${l.partnerName === 'Direct' ? 'direct' : ''}">${l.partnerName}</span>
           ${l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : ''}
+          ${l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">📄 Documents Pending</span>' : ''}
         </div>
         ${chips ? `<div class="chip-row">${chips}</div>` : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>'}
         ${sentTo}

@@ -389,7 +389,8 @@ function renderLeads() {
     var idx = ALL_LEADS.indexOf(l);
     var chips = (l.pipeline||[]).map(function(p){ return '<span class="chip ' + chipClass(p.status) + '">' + escapeHtml(p.lender) + ': ' + escapeHtml(p.status) + '</span>'; }).join("");
     var sentTo = (l.sentToDsas && l.sentToDsas.length) ? ('<div class="sent-to-line">Sent to: <b>' + escapeHtml(l.sentToDsas.join(", ")) + '</b></div>') : "";
-    var cleanMobile = (l.mobile || "").replace(/\D/g,"");
+    var cleanMobile = String(l.mobile || "").replace(/\D/g,"");
+
     var contactIcons = cleanMobile ? (
         '<div class="contact-icons" onclick="event.stopPropagation()">' +
           '<a class="call-icon" href="tel:' + cleanMobile + '" title="Call">\u260E</a>' +

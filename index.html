@@ -566,7 +566,8 @@ function renderPartners() {
   var q = ((qEl && qEl.value) || "").toLowerCase();
   var container = document.getElementById("partnersContainer");
   var partners = ALL_PARTNERS.filter(function(p){
-    return !q || (p.name||"").toLowerCase().indexOf(q) !== -1 || (p.mobile||"").indexOf(q) !== -1;
+    return !q || String(p.name||"").toLowerCase().indexOf(q) !== -1 || String(p.mobile||"").indexOf(q) !== -1;
+
   });
   if (partners.length === 0) {
     container.innerHTML = '<div class="empty-state">No partners found.</div>';

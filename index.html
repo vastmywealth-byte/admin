@@ -274,18 +274,39 @@ function doLogin() {
   var btn = document.getElementById("loginBtn");
   btn.disabled = true; btn.textContent = "Signing in…";
 
-  apiPost({ action: "adminGetDashboardData", password: pw })
-    .then(function(result){
-      btn.disabled = false; btn.textContent = "Sign In";
-      if (result.success) {
-        ADMIN_PASSWORD = pw;
-        document.getElementById("loginScreen").style.display = "none";
-        document.getElementById("app").style.display = "block";
-        applyDashboardData(result);
-      } else {
-        errEl.textContent = result.error || "Incorrect password. Please try again.";
+  // Step 1: fast password check only — no sheet scanning.
+  apiPost({ action: "adminLogin", password: pw })
+    .then(function(loginResult){
+      if (!loginResult.success) {
+        btn.disabled = false; btn.textContent = "Sign In";
+        errEl.textContent = "Incorrect password. Please try again.";
         errEl.style.display = "block";
+        return;
       }
+      ADMIN_PASSWORD = pw;
+      document.getElementById("loginScreen").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      document.getElementById("leadsContainer").innerHTML = '<div class="empty-state">Loading leads…</div>';
+      document.getElementById("partnersContainer").innerHTML = '<div class="empty-state">Loading partners…</div>';
+
+      // Step 2: heavier dashboard data fetched only after login succeeds.
+      apiPost({ action: "adminGetDashboardData", password: ADMIN_PASSWORD })
+        .then(function(result){
+          btn.disabled = false; btn.textContent = "Sign In";
+          if (result.success) {
+            applyDashboardData(result);
+          } else {
+            document.getElementById("leadsContainer").innerHTML =
+              '<div class="error-state">Failed to load leads: ' + escapeHtml(result.error || "Unknown error") +
+              '<br><button onclick="refreshAll()">Retry</button></div>';
+          }
+        })
+        .catch(function(err){
+          btn.disabled = false; btn.textContent = "Sign In";
+          document.getElementById("leadsContainer").innerHTML =
+            '<div class="error-state">' + escapeHtml(err.message) +
+            '<br><button onclick="refreshAll()">Retry</button></div>';
+        });
     })
     .catch(function(err){
       btn.disabled = false; btn.textContent = "Sign In";
@@ -293,7 +314,6 @@ function doLogin() {
       errEl.style.display = "block";
     });
 }
-
 function applyDashboardData(result) {
   ALL_LEADS = result.leads || [];
   ACTIVE_LENDERS = result.lenders || [];

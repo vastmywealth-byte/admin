@@ -186,11 +186,14 @@
         <option value="Disbursed">Disbursed</option>
         <option value="Rejected">Rejected</option>
       </select>
-      <select id="docFilter">
+            <select id="docFilter">
         <option value="">All Documents</option>
         <option value="Pending">Documents Pending</option>
         <option value="Submitted">Documents Submitted</option>
       </select>
+      <label style="color:#AFC0E8; font-size:12px; display:flex; align-items:center; gap:6px; flex-shrink:0;">
+        <input type="checkbox" id="showHiddenCheckbox"> Show hidden
+      </label>
     </div>
     <main><div id="leadsContainer"><div class="empty-state">Loading leads…</div></div></main>
   </div>
@@ -219,13 +222,18 @@
   <div class="lender-select-list" id="lenderSelectList"><div class="spinner-inline">Loading lenders…</div></div>
   <button class="btn-secondary" style="width:100%; margin-top:10px;" id="addLendersBtn">Add Selected Lenders</button>
 
-  <div class="section-label">Assign To DSA</div>
+    <div class="section-label">Assign To DSA</div>
   <div class="dsa-select-list" id="dsaSelectList"><div class="spinner-inline">Loading DSAs…</div></div>
   <div class="btn-row">
     <button class="btn-gold" id="assignDsaBtn">Assign &amp; Send Email</button>
   </div>
-</div>
 
+  <div class="section-label" style="color:#FF8A8A;">Danger Zone</div>
+  <div class="btn-row">
+    <button class="btn-secondary" id="hideLeadBtn">Hide from list</button>
+    <button class="btn-secondary" id="deleteLeadBtn" style="border-color:#B91C1C; color:#FFC5C1;">Delete permanently</button>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -376,7 +384,28 @@ function overallStatusClass(pipeline) {
 function chipClass(status) {
   return { "In Process":"process","Approved":"approved","Disbursed":"disbursed","Rejected":"rejected" }[status] || "process";
 }
+function currentIncludeHidden() {
+  var cb = document.getElementById("showHiddenCheckbox");
+  return !!(cb && cb.checked);
+}
 
+function reloadLeadsOnly() {
+  document.getElementById("leadsContainer").innerHTML = '<div class="empty-state">Loading leads…</div>';
+  apiPost({ action: "adminGetAllLeads", password: ADMIN_PASSWORD, includeHidden: currentIncludeHidden() })
+    .then(function(result){
+      if (result.success) {
+        ALL_LEADS = result.leads || [];
+        renderLeads();
+      } else {
+        document.getElementById("leadsContainer").innerHTML =
+          '<div class="error-state">' + escapeHtml(result.error || "Failed to load leads") + '</div>';
+      }
+    })
+    .catch(function(err){
+      document.getElementById("leadsContainer").innerHTML =
+        '<div class="error-state">' + escapeHtml(err.message) + '</div>';
+    });
+}
 function escapeHtml(s){ var d = document.createElement('div'); d.textContent = (s === undefined || s === null) ? '' : s; return d.innerHTML; }
 
 function renderLeads() {
@@ -420,8 +449,8 @@ function renderLeads() {
           folderIcon +
         '</div>') : "";
 
-    var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
-
+       var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
+    var hiddenTag = l.hidden ? '<span class="doc-pending-tag" style="background:#374151; color:#D1D5DB;">Hidden</span>' : '';
     return '' +
       '<div class="lead-card ' + overallStatusClass(l.pipeline) + '" onclick="openSheet(' + idx + ')">' +
         '<div class="lead-top">' +
@@ -438,8 +467,9 @@ function renderLeads() {
           '<span>' + escapeHtml(l.product || "—") + ' \u00B7 ' + escapeHtml(l.category || "—") + '</span>' +
           '<span>' + escapeHtml(l.mobile || "") + '</span>' +
           '<span class="partner-tag ' + (l.partnerName === 'Direct' ? 'direct' : '') + '">' + escapeHtml(l.partnerName) + '</span>' +
-          (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
+                    (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
           docTag +
+          hiddenTag +
         '</div>' +
         (chips ? ('<div class="chip-row">' + chips + '</div>') : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>') +
         sentTo +
@@ -458,10 +488,48 @@ function openSheet(idx) {
   renderLenderSelectList();
   renderDsaSelectList();
 
+  var hideBtn = document.getElementById("hideLeadBtn");
+  hideBtn.textContent = CURRENT_LEAD.hidden ? "Unhide (show in list again)" : "Hide from list";
+
   document.getElementById("sheetBackdrop").style.display = "block";
   document.getElementById("sheet").style.display = "block";
 }
 
+function toggleHideCurrentLead() {
+  if (!CURRENT_LEAD) return;
+  var hide = !CURRENT_LEAD.hidden;
+  apiPost({
+    action: hide ? "adminHideLead" : "adminUnhideLead",
+    password: ADMIN_PASSWORD,
+    leadId: CURRENT_LEAD.leadId, product: CURRENT_LEAD.product
+  }).then(function(result){
+    if (result.success) {
+      showToast(hide ? "Lead hidden" : "Lead unhidden");
+      closeSheet();
+      reloadLeadsOnly();
+    } else {
+      showToast(result.error || "Action failed", true);
+    }
+  }).catch(function(err){ showToast("Connection error: " + err.message, true); });
+}
+
+function deleteCurrentLead() {
+  if (!CURRENT_LEAD) return;
+  var confirmed = confirm("Permanently delete this lead (" + (CURRENT_LEAD.name || "—") + ")? This cannot be undone.");
+  if (!confirmed) return;
+  apiPost({
+    action: "adminDeleteLead", password: ADMIN_PASSWORD,
+    leadId: CURRENT_LEAD.leadId, product: CURRENT_LEAD.product
+  }).then(function(result){
+    if (result.success) {
+      showToast("Lead deleted");
+      closeSheet();
+      reloadLeadsOnly();
+    } else {
+      showToast(result.error || "Delete failed", true);
+    }
+  }).catch(function(err){ showToast("Connection error: " + err.message, true); });
+}
 function closeSheet() {
   document.getElementById("sheetBackdrop").style.display = "none";
   document.getElementById("sheet").style.display = "none";
@@ -597,13 +665,16 @@ function renderPartners() {
     container.innerHTML = '<div class="empty-state">No partners found.</div>';
     return;
   }
-  container.innerHTML = partners.map(function(p){
+    container.innerHTML = partners.map(function(p, i){
     var cleanMobile = String(p.mobile || "").replace(/\D/g,"");
+    var count = p.last30Count || 0;
+    var rankTag = (i === 0 && count > 0) ? ' <span style="color:var(--gold); font-weight:800;">🏆 Top Partner</span>' : '';
     return '' +
       '<div class="partner-card">' +
         '<div class="partner-info">' +
-          '<div class="pname">' + escapeHtml(p.name || "—") + '</div>' +
+          '<div class="pname">' + escapeHtml(p.name || "—") + rankTag + '</div>' +
           '<div class="pdetail">' + escapeHtml(p.mobile || "") + (p.email ? (' \u00B7 ' + escapeHtml(p.email)) : "") + '</div>' +
+          '<div class="pdetail" style="margin-top:3px; color:var(--navy); font-weight:700;">' + count + ' application' + (count === 1 ? '' : 's') + ' \u00B7 last 30 days</div>' +
         '</div>' +
         '<div class="partner-actions">' +
           (p.mobile ? ('<a class="icon-btn" href="tel:' + p.mobile + '">\u260E</a>') : "") +
@@ -631,6 +702,9 @@ document.getElementById("sheetBackdrop").addEventListener("click", closeSheet);
 document.getElementById("closeSheetBtn").addEventListener("click", closeSheet);
 document.getElementById("addLendersBtn").addEventListener("click", addSelectedLenders);
 document.getElementById("assignDsaBtn").addEventListener("click", assignDsa);
+document.getElementById("hideLeadBtn").addEventListener("click", toggleHideCurrentLead);
+document.getElementById("deleteLeadBtn").addEventListener("click", deleteCurrentLead);
+document.getElementById("showHiddenCheckbox").addEventListener("change", reloadLeadsOnly);
 </script>
 </body>
 </html>

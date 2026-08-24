@@ -669,10 +669,11 @@ function renderPartners() {
     var cleanMobile = String(p.mobile || "").replace(/\D/g,"");
     var count = p.last30Count || 0;
     var rankTag = (i === 0 && count > 0) ? ' <span style="color:var(--gold); font-weight:800;">🏆 Top Partner</span>' : '';
+          var inactiveTag = p.inactive ? ' <span style="color:#B91C1C; font-weight:700; font-size:11px;">⚠ Inactive 30+ days</span>' : '';
     return '' +
       '<div class="partner-card">' +
         '<div class="partner-info">' +
-          '<div class="pname">' + escapeHtml(p.name || "—") + rankTag + '</div>' +
+          '<div class="pname">' + escapeHtml(p.name || "—") + rankTag + inactiveTag + '</div>' +
           '<div class="pdetail">' + escapeHtml(p.mobile || "") + (p.email ? (' \u00B7 ' + escapeHtml(p.email)) : "") + '</div>' +
           '<div class="pdetail" style="margin-top:3px; color:var(--navy); font-weight:700;">' + count + ' application' + (count === 1 ? '' : 's') + ' \u00B7 last 30 days</div>' +
         '</div>' +

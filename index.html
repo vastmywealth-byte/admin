@@ -254,6 +254,59 @@ function showToast(msg, isError) {
   t.style.display = "block";
   setTimeout(function(){ t.style.display = "none"; }, 3200);
 }
+// 1. When the page loads, check for cached data instantly
+document.addEventListener("DOMContentLoaded", function() {
+  loadAdminDashboardWithCache();
+});
+
+function loadAdminDashboardWithCache() {
+  // Check if browser has a saved snapshot of your dashboard
+  var cached = localStorage.getItem('vmw_admin_cache');
+  if (cached) {
+    try {
+      var parsed = JSON.parse(cached);
+      renderAdminTable(parsed); // ⚠️ NOTE: Replace 'renderAdminTable' with whatever your actual table-drawing function is called
+    } catch(e) { 
+      console.error("Cache parse error", e); 
+    }
+  } else {
+    // Show a loading indicator if there's no cache yet
+    var loader = document.getElementById('loadingSpinner');
+    if (loader) loader.style.display = 'block';
+  }
+
+  // Retrieve your saved PIN from local storage (or prompt for it if missing)
+  var savedPin = localStorage.getItem('vmw_admin_pin') || '';
+
+  // 2. Silently fetch fresh data from Google Apps Script in the background
+  fetch(BACKEND_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'getAdminDashboard', pin: savedPin })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(response) {
+    if (response.success) {
+      var freshData = response.data || response;
+      
+      // Save fresh data to browser cache for next time
+      localStorage.setItem('vmw_admin_cache', JSON.stringify(freshData));
+      
+      // Hide loader and refresh table with newest leads
+      var loader = document.getElementById('loadingSpinner');
+      if (loader) loader.style.display = 'none';
+      
+      renderAdminTable(freshData); // Update table with fresh data
+    } else {
+      console.error("Admin authentication or fetch failed:", response.error);
+    }
+  })
+  .catch(function(err) {
+    console.error("Background sync failed:", err);
+    var loader = document.getElementById('loadingSpinner');
+    if (loader) loader.style.display = 'none';
+  });
+}
+
 
 // Every backend call goes through here. Any network failure or
 // non-JSON response (e.g. an Apps Script error page) is caught

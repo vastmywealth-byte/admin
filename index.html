@@ -78,7 +78,7 @@
   .contact-icons a.call-icon{background:var(--navy); color:var(--gold-light);}
   .contact-icons a.whatsapp-icon{background:#25D366; color:#fff;}
   .partner-actions a.whatsapp-icon{background:#25D366; color:#fff;}
-.partner-actions a.folder-icon{background:var(--gold); color:var(--navy);}
+  .partner-actions a.folder-icon{background:var(--gold); color:var(--navy);}
   .contact-icons a.folder-icon{background:var(--gold); color:var(--navy);}
   .chip-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
   .chip{font-size:11px; font-weight:600; padding:4px 9px; border-radius:20px; white-space:nowrap;}
@@ -186,7 +186,7 @@
         <option value="Disbursed">Disbursed</option>
         <option value="Rejected">Rejected</option>
       </select>
-            <select id="docFilter">
+      <select id="docFilter">
         <option value="">All Documents</option>
         <option value="Pending">Documents Pending</option>
         <option value="Submitted">Documents Submitted</option>
@@ -222,7 +222,7 @@
   <div class="lender-select-list" id="lenderSelectList"><div class="spinner-inline">Loading lenders…</div></div>
   <button class="btn-secondary" style="width:100%; margin-top:10px;" id="addLendersBtn">Add Selected Lenders</button>
 
-    <div class="section-label">Assign To DSA</div>
+  <div class="section-label">Assign To DSA</div>
   <div class="dsa-select-list" id="dsaSelectList"><div class="spinner-inline">Loading DSAs…</div></div>
   <div class="btn-row">
     <button class="btn-gold" id="assignDsaBtn">Assign &amp; Send Email</button>
@@ -254,59 +254,6 @@ function showToast(msg, isError) {
   t.style.display = "block";
   setTimeout(function(){ t.style.display = "none"; }, 3200);
 }
-// 1. When the page loads, check for cached data instantly
-document.addEventListener("DOMContentLoaded", function() {
-  loadAdminDashboardWithCache();
-});
-
-function loadAdminDashboardWithCache() {
-  // Check if browser has a saved snapshot of your dashboard
-  var cached = localStorage.getItem('vmw_admin_cache');
-  if (cached) {
-    try {
-      var parsed = JSON.parse(cached);
-      renderAdminTable(parsed); // ⚠️ NOTE: Replace 'renderAdminTable' with whatever your actual table-drawing function is called
-    } catch(e) { 
-      console.error("Cache parse error", e); 
-    }
-  } else {
-    // Show a loading indicator if there's no cache yet
-    var loader = document.getElementById('loadingSpinner');
-    if (loader) loader.style.display = 'block';
-  }
-
-  // Retrieve your saved PIN from local storage (or prompt for it if missing)
-  var savedPin = localStorage.getItem('vmw_admin_pin') || '';
-
-  // 2. Silently fetch fresh data from Google Apps Script in the background
-  fetch(BACKEND_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: 'getAdminDashboard', pin: savedPin })
-  })
-  .then(function(res) { return res.json(); })
-  .then(function(response) {
-    if (response.success) {
-      var freshData = response.data || response;
-      
-      // Save fresh data to browser cache for next time
-      localStorage.setItem('vmw_admin_cache', JSON.stringify(freshData));
-      
-      // Hide loader and refresh table with newest leads
-      var loader = document.getElementById('loadingSpinner');
-      if (loader) loader.style.display = 'none';
-      
-      renderAdminTable(freshData); // Update table with fresh data
-    } else {
-      console.error("Admin authentication or fetch failed:", response.error);
-    }
-  })
-  .catch(function(err) {
-    console.error("Background sync failed:", err);
-    var loader = document.getElementById('loadingSpinner');
-    if (loader) loader.style.display = 'none';
-  });
-}
-
 
 // Every backend call goes through here. Any network failure or
 // non-JSON response (e.g. an Apps Script error page) is caught
@@ -323,6 +270,35 @@ function apiPost(payload) {
       catch(e){ throw new Error("Server returned a non-JSON response (likely a script error or stale deployment). Raw: " + raw.slice(0,200)); }
     });
 }
+
+/* ---------------- AUTO-CACHE PAGE LOAD ---------------- */
+document.addEventListener("DOMContentLoaded", function() {
+  var savedPin = localStorage.getItem('vmw_admin_pin');
+  var cachedData = localStorage.getItem('vmw_admin_cache');
+
+  // If we have a saved PIN and cached data, instantly log in and render from cache for lightning speed!
+  if (savedPin && cachedData) {
+    try {
+      var parsed = JSON.parse(cachedData);
+      ADMIN_PASSWORD = savedPin;
+      document.getElementById("loginScreen").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      
+      applyDashboardData(parsed);
+
+      // Silently sync fresh updates in the background
+      apiPost({ action: "adminGetDashboardData", password: ADMIN_PASSWORD })
+        .then(function(result){
+          if (result.success) {
+            localStorage.setItem('vmw_admin_cache', JSON.stringify(result));
+            applyDashboardData(result);
+          }
+        }).catch(function(){});
+    } catch(e) {
+      localStorage.removeItem('vmw_admin_cache');
+    }
+  }
+});
 
 /* ---------------- LOGIN ---------------- */
 
@@ -345,6 +321,9 @@ function doLogin() {
         return;
       }
       ADMIN_PASSWORD = pw;
+      // Save PIN to browser for future instant caching loads
+      localStorage.setItem('vmw_admin_pin', pw);
+
       document.getElementById("loginScreen").style.display = "none";
       document.getElementById("app").style.display = "block";
       document.getElementById("leadsContainer").innerHTML = '<div class="empty-state">Loading leads…</div>';
@@ -355,6 +334,7 @@ function doLogin() {
         .then(function(result){
           btn.disabled = false; btn.textContent = "Sign In";
           if (result.success) {
+            localStorage.setItem('vmw_admin_cache', JSON.stringify(result));
             applyDashboardData(result);
           } else {
             document.getElementById("leadsContainer").innerHTML =
@@ -395,6 +375,7 @@ function refreshAll() {
     })
     .then(function(result){
       if (result.success) {
+        localStorage.setItem('vmw_admin_cache', JSON.stringify(result));
         applyDashboardData(result);
         showToast("Refreshed");
       } else {
@@ -502,7 +483,7 @@ function renderLeads() {
           folderIcon +
         '</div>') : "";
 
-       var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
+    var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
     var hiddenTag = l.hidden ? '<span class="doc-pending-tag" style="background:#374151; color:#D1D5DB;">Hidden</span>' : '';
     return '' +
       '<div class="lead-card ' + overallStatusClass(l.pipeline) + '" onclick="openSheet(' + idx + ')">' +
@@ -520,7 +501,7 @@ function renderLeads() {
           '<span>' + escapeHtml(l.product || "—") + ' \u00B7 ' + escapeHtml(l.category || "—") + '</span>' +
           '<span>' + escapeHtml(l.mobile || "") + '</span>' +
           '<span class="partner-tag ' + (l.partnerName === 'Direct' ? 'direct' : '') + '">' + escapeHtml(l.partnerName) + '</span>' +
-                    (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
+          (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
           docTag +
           hiddenTag +
         '</div>' +
@@ -712,17 +693,16 @@ function renderPartners() {
   var container = document.getElementById("partnersContainer");
   var partners = ALL_PARTNERS.filter(function(p){
     return !q || String(p.name||"").toLowerCase().indexOf(q) !== -1 || String(p.mobile||"").indexOf(q) !== -1;
-
   });
   if (partners.length === 0) {
     container.innerHTML = '<div class="empty-state">No partners found.</div>';
     return;
   }
-    container.innerHTML = partners.map(function(p, i){
+  container.innerHTML = partners.map(function(p, i){
     var cleanMobile = String(p.mobile || "").replace(/\D/g,"");
     var count = p.last30Count || 0;
     var rankTag = (i === 0 && count > 0) ? ' <span style="color:var(--gold); font-weight:800;">🏆 Top Partner</span>' : '';
-          var inactiveTag = p.inactive ? ' <span style="color:#B91C1C; font-weight:700; font-size:11px;">⚠ Inactive 30+ days</span>' : '';
+    var inactiveTag = p.inactive ? ' <span style="color:#B91C1C; font-weight:700; font-size:11px;">⚠ Inactive 30+ days</span>' : '';
     return '' +
       '<div class="partner-card">' +
         '<div class="partner-info">' +
@@ -762,3 +742,4 @@ document.getElementById("showHiddenCheckbox").addEventListener("change", reloadL
 </script>
 </body>
 </html>
+

@@ -228,10 +228,19 @@
     <button class="btn-gold" id="assignDsaBtn">Assign &amp; Send Email</button>
   </div>
 
-  <div class="section-label" style="color:#FF8A8A;">Danger Zone</div>
+    <div class="section-label" style="color:#FF8A8A;">Danger Zone</div>
   <div class="btn-row">
     <button class="btn-secondary" id="hideLeadBtn">Hide from list</button>
     <button class="btn-secondary" id="deleteLeadBtn" style="border-color:#B91C1C; color:#FFC5C1;">Delete permanently</button>
+  </div>
+
+  <div id="processingBankSection" class="hidden" style="margin-top:16px;">
+    <div class="section-label">Processing Bank</div>
+    <input type="text" id="processingBankInput" placeholder="Enter bank name manually"
+      style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--panel-border); background:var(--navy-mid); color:#fff; margin-bottom:10px;">
+    <div class="btn-row">
+      <button class="btn-gold" id="saveProcessingBankBtn">Save</button>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -522,13 +531,18 @@ function openSheet(idx) {
   renderLenderSelectList();
   renderDsaSelectList();
 
-  var hideBtn = document.getElementById("hideLeadBtn");
+   var hideBtn = document.getElementById("hideLeadBtn");
   hideBtn.textContent = CURRENT_LEAD.hidden ? "Unhide (show in list again)" : "Hide from list";
+
+  var isVlEl = (CURRENT_LEAD.product === "VL" || CURRENT_LEAD.product === "EL");
+  document.getElementById("processingBankSection").classList.toggle("hidden", !isVlEl);
+  if (isVlEl) {
+    document.getElementById("processingBankInput").value = CURRENT_LEAD.processingBank || "";
+  }
 
   document.getElementById("sheetBackdrop").style.display = "block";
   document.getElementById("sheet").style.display = "block";
 }
-
 function toggleHideCurrentLead() {
   if (!CURRENT_LEAD) return;
   var hide = !CURRENT_LEAD.hidden;
@@ -561,6 +575,22 @@ function deleteCurrentLead() {
       reloadLeadsOnly();
     } else {
       showToast(result.error || "Delete failed", true);
+    }
+  }).catch(function(err){ showToast("Connection error: " + err.message, true); });
+}
+  function saveProcessingBank() {
+  if (!CURRENT_LEAD) return;
+  var bankName = document.getElementById("processingBankInput").value.trim();
+  apiPost({
+    action: "adminSetVlElProcessingBank", password: ADMIN_PASSWORD,
+    leadId: CURRENT_LEAD.leadId, product: CURRENT_LEAD.product, bankName: bankName
+  }).then(function(result){
+    if (result.success) {
+      showToast("Processing bank saved");
+      CURRENT_LEAD.processingBank = bankName;
+      reloadLeadsOnly();
+    } else {
+      showToast(result.error || "Save failed", true);
     }
   }).catch(function(err){ showToast("Connection error: " + err.message, true); });
 }
@@ -738,6 +768,7 @@ document.getElementById("addLendersBtn").addEventListener("click", addSelectedLe
 document.getElementById("assignDsaBtn").addEventListener("click", assignDsa);
 document.getElementById("hideLeadBtn").addEventListener("click", toggleHideCurrentLead);
 document.getElementById("deleteLeadBtn").addEventListener("click", deleteCurrentLead);
+document.getElementById("saveProcessingBankBtn").addEventListener("click", saveProcessingBank);
 document.getElementById("showHiddenCheckbox").addEventListener("change", reloadLeadsOnly);
 </script>
 </body>

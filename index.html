@@ -494,6 +494,7 @@ function renderLeads() {
 
     var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
     var hiddenTag = l.hidden ? '<span class="doc-pending-tag" style="background:#374151; color:#D1D5DB;">Hidden</span>' : '';
+    var bankTag = l.processingBank ? '<span class="doc-pending-tag" style="background:#1E3A5F; color:#93C5FD;">' + escapeHtml(l.processingBank) + '</span>' : '';
     return '' +
       '<div class="lead-card ' + overallStatusClass(l.pipeline) + '" onclick="openSheet(' + idx + ')">' +
         '<div class="lead-top">' +
@@ -510,11 +511,12 @@ function renderLeads() {
           '<span>' + escapeHtml(l.product || "—") + ' \u00B7 ' + escapeHtml(l.category || "—") + '</span>' +
           '<span>' + escapeHtml(l.mobile || "") + '</span>' +
           '<span class="partner-tag ' + (l.partnerName === 'Direct' ? 'direct' : '') + '">' + escapeHtml(l.partnerName) + '</span>' +
-          (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
+                    (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
           docTag +
           hiddenTag +
+          bankTag +
         '</div>' +
-        (chips ? ('<div class="chip-row">' + chips + '</div>') : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>') +
+      (chips ? ('<div class="chip-row">' + chips + '</div>') : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>') +
         sentTo +
       '</div>';
   }).join("");

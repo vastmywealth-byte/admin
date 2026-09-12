@@ -73,6 +73,15 @@
   .allocated-tag{ display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; padding:2px 7px; border-radius:5px; background:var(--navy); color:var(--gold-light); }
   .doc-pending-tag{ display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; padding:2px 7px; border-radius:5px; background:var(--pending-bg); color:var(--pending); }
 
+  /* Collapsed name-only cards — click to expand full details, keeps lists short to scroll */
+  .name-row{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .name-row .lead-name{margin:0;}
+  .caret{color:var(--muted); font-size:12px; transition:transform .15s ease; flex-shrink:0;}
+  .caret.open{transform:rotate(180deg);}
+  .card-details{display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line);}
+  .card-details.open{display:block;}
+  .cp-prefix{color:var(--gold); font-weight:800;}
+
   .contact-icons{display:flex; gap:6px; flex-shrink:0;}
   .contact-icons a{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; text-decoration:none; flex-shrink:0; }
   .contact-icons a.call-icon{background:var(--navy); color:var(--gold-light);}
@@ -166,6 +175,7 @@
   <div class="tab-switch">
     <button class="tab-btn active" id="tabBtnLeads">Leads</button>
     <button class="tab-btn" id="tabBtnPartners">Partners</button>
+    <button class="tab-btn" id="tabBtnBankChannel">Bank Channel</button>
   </div>
 
   <!-- LEADS TAB -->
@@ -204,6 +214,20 @@
       <input type="text" id="partnerSearchBox" placeholder="Search partner name or mobile...">
     </div>
     <main><div id="partnersContainer"><div class="empty-state">Loading partners…</div></div></main>
+  </div>
+
+  <!-- BANK CHANNEL TAB -->
+  <div id="bankChannelTab" style="display:none;">
+    <div class="filters">
+      <input type="text" id="bankChannelSearchBox" placeholder="Search customer, banker, CP, bank...">
+      <select id="bankChannelStatusFilter">
+        <option value="">All Statuses</option>
+        <option value="Submitted">Submitted</option>
+        <option value="Policy Rejected">Policy Rejected</option>
+        <option value="Disbursed">Disbursed</option>
+      </select>
+    </div>
+    <main><div id="bankChannelContainer"><div class="empty-state">Loading bank channel logs…</div></div></main>
   </div>
 </div>
 
@@ -249,11 +273,15 @@
 // ⚠️ SET THIS to your Apps Script Web App URL (Deploy → Manage deployments)
 var API_URL = "https://script.google.com/macros/s/AKfycbwGTSTzKTJYrhx2wP3UuBPG_64g-ZczNPhem3-PfcPPu8AYQaT0MvSgz1FsyRdoonVndg/exec";
 
+// ⚠️ SET THIS to the Bank Channel CRM's Apps Script Web App URL (the Code.gs we built for the banker flow)
+var BANK_API_URL = "https://script.google.com/macros/s/PASTE_BANK_CHANNEL_DEPLOYMENT_ID_HERE/exec";
+
 var ADMIN_PASSWORD = "";
 var ALL_LEADS = [];
 var ACTIVE_LENDERS = [];
 var ACTIVE_DSAS = [];
 var ALL_PARTNERS = [];
+var ALL_BANK_LOGS = [];
 var CURRENT_LEAD = null;
 
 function showToast(msg, isError) {
@@ -277,6 +305,20 @@ function apiPost(payload) {
     .then(function(raw){
       try { return JSON.parse(raw); }
       catch(e){ throw new Error("Server returned a non-JSON response (likely a script error or stale deployment). Raw: " + raw.slice(0,200)); }
+    });
+}
+
+// Same as apiPost, but targets the separate Bank Channel CRM backend.
+function apiPostBank(payload) {
+  return fetch(BANK_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  })
+    .then(function(res){ return res.text(); })
+    .then(function(raw){
+      try { return JSON.parse(raw); }
+      catch(e){ throw new Error("Bank Channel server returned a non-JSON response. Raw: " + raw.slice(0,200)); }
     });
 }
 
@@ -337,6 +379,7 @@ function doLogin() {
       document.getElementById("app").style.display = "block";
       document.getElementById("leadsContainer").innerHTML = '<div class="empty-state">Loading leads…</div>';
       document.getElementById("partnersContainer").innerHTML = '<div class="empty-state">Loading partners…</div>';
+      fetchBankChannel(); // fires in parallel — separate backend, shouldn't block leads/partners load
 
       // Step 2: heavier dashboard data fetched only after login succeeds.
       apiPost({ action: "adminGetDashboardData", password: ADMIN_PASSWORD })
@@ -373,9 +416,30 @@ function applyDashboardData(result) {
   renderPartners();
 }
 
+function fetchBankChannel() {
+  document.getElementById("bankChannelContainer").innerHTML = '<div class="empty-state">Loading bank channel logs…</div>';
+  apiPostBank({ action: "adminGetBankChannelLogs", password: ADMIN_PASSWORD })
+    .then(function(result){
+      if (result.success) {
+        ALL_BANK_LOGS = result.logs || [];
+        renderBankChannel();
+      } else {
+        document.getElementById("bankChannelContainer").innerHTML =
+          '<div class="error-state">' + escapeHtml(result.error || "Failed to load bank channel logs") +
+          '<br><button onclick="fetchBankChannel()">Retry</button></div>';
+      }
+    })
+    .catch(function(err){
+      document.getElementById("bankChannelContainer").innerHTML =
+        '<div class="error-state">' + escapeHtml(err.message) +
+        '<br><button onclick="fetchBankChannel()">Retry</button></div>';
+    });
+}
+
 function refreshAll() {
   document.getElementById("leadsContainer").innerHTML = '<div class="empty-state">Loading leads…</div>';
   document.getElementById("partnersContainer").innerHTML = '<div class="empty-state">Loading partners…</div>';
+  fetchBankChannel();
 
   apiPost({ action: "adminClearCache", password: ADMIN_PASSWORD })
     .catch(function(){ /* non-fatal — proceed to reload anyway */ })
@@ -406,8 +470,10 @@ function refreshAll() {
 function switchTab(tab) {
   document.getElementById("leadsTab").style.display = tab === "leads" ? "block" : "none";
   document.getElementById("partnersTab").style.display = tab === "partners" ? "block" : "none";
+  document.getElementById("bankChannelTab").style.display = tab === "bankchannel" ? "block" : "none";
   document.getElementById("tabBtnLeads").classList.toggle("active", tab === "leads");
   document.getElementById("tabBtnPartners").classList.toggle("active", tab === "partners");
+  document.getElementById("tabBtnBankChannel").classList.toggle("active", tab === "bankchannel");
 }
 
 /* ---------------- LEADS ---------------- */
@@ -451,6 +517,14 @@ function reloadLeadsOnly() {
 }
 function escapeHtml(s){ var d = document.createElement('div'); d.textContent = (s === undefined || s === null) ? '' : s; return d.innerHTML; }
 
+// Best-effort "latest first" ordering — pulls a numeric timestamp out of the
+// ID (most systems ID rows with Date.now()) so the newest entries sort first
+// without needing a dedicated timestamp field from the backend.
+function idSortKey(id) {
+  var digits = String(id || "").match(/\d+/g);
+  return digits ? Number(digits[digits.length - 1]) : 0;
+}
+
 function renderLeads() {
   var qEl = document.getElementById("searchBox");
   var productEl = document.getElementById("productFilter");
@@ -474,6 +548,8 @@ function renderLeads() {
     return true;
   });
 
+  leads.sort(function(a, b){ return idSortKey(b.leadId) - idSortKey(a.leadId); });
+
   if (leads.length === 0) {
     container.innerHTML = '<div class="empty-state">No leads match your filters.</div>';
     return;
@@ -495,31 +571,52 @@ function renderLeads() {
     var docTag = l.documentStatus === 'Pending' ? '<span class="doc-pending-tag">Documents Pending</span>' : '';
     var hiddenTag = l.hidden ? '<span class="doc-pending-tag" style="background:#374151; color:#D1D5DB;">Hidden</span>' : '';
     var bankTag = l.processingBank ? '<span class="doc-pending-tag" style="background:#1E3A5F; color:#93C5FD;">' + escapeHtml(l.processingBank) + '</span>' : '';
+
+    // Collapsed view: name only (partner name first when partner-sourced). Everything
+    // else lives in the expandable details block, opened by tapping the row.
+    var isDirect = (l.partnerName === 'Direct' || !l.partnerName);
+    var displayName = isDirect
+      ? escapeHtml(l.name || "—")
+      : '<span class="cp-prefix">' + escapeHtml(l.partnerName) + '</span> — ' + escapeHtml(l.name || "—");
+
     return '' +
-      '<div class="lead-card ' + overallStatusClass(l.pipeline) + '" onclick="openSheet(' + idx + ')">' +
-        '<div class="lead-top">' +
-          '<div>' +
-            '<div class="lead-name">' + escapeHtml(l.name || "—") + '</div>' +
-            (l.companyName ? ('<div class="lead-company">' + escapeHtml(l.companyName) + '</div>') : "") +
-          '</div>' +
-          '<div style="display:flex; align-items:center; gap:8px;">' +
-            '<div class="lead-amount">\u20B9' + escapeHtml(l.loanAmount || "—") + '</div>' +
-            contactIcons +
-          '</div>' +
+      '<div class="lead-card ' + overallStatusClass(l.pipeline) + '">' +
+        '<div class="name-row" onclick="toggleCardDetails(this)">' +
+          '<div class="lead-name">' + displayName + '</div>' +
+          '<span class="caret">\u25BC</span>' +
         '</div>' +
-        '<div class="lead-meta">' +
-          '<span>' + escapeHtml(l.product || "—") + ' \u00B7 ' + escapeHtml(l.category || "—") + '</span>' +
-          '<span>' + escapeHtml(l.mobile || "") + '</span>' +
-          '<span class="partner-tag ' + (l.partnerName === 'Direct' ? 'direct' : '') + '">' + escapeHtml(l.partnerName) + '</span>' +
-                    (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
-          docTag +
-          hiddenTag +
-          bankTag +
+        '<div class="card-details">' +
+          '<div class="lead-top">' +
+            '<div>' +
+              (l.companyName ? ('<div class="lead-company">' + escapeHtml(l.companyName) + '</div>') : "") +
+            '</div>' +
+            '<div style="display:flex; align-items:center; gap:8px;">' +
+              '<div class="lead-amount">\u20B9' + escapeHtml(l.loanAmount || "—") + '</div>' +
+              contactIcons +
+            '</div>' +
+          '</div>' +
+          '<div class="lead-meta">' +
+            '<span>' + escapeHtml(l.product || "—") + ' \u00B7 ' + escapeHtml(l.category || "—") + '</span>' +
+            '<span>' + escapeHtml(l.mobile || "") + '</span>' +
+            '<span class="partner-tag ' + (isDirect ? 'direct' : '') + '">' + escapeHtml(l.partnerName || "Direct") + '</span>' +
+            (l.isAllocated ? '<span class="allocated-tag">Allocated</span>' : '') +
+            docTag + hiddenTag + bankTag +
+          '</div>' +
+          (chips ? ('<div class="chip-row">' + chips + '</div>') : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>') +
+          sentTo +
+          '<button class="btn-secondary" style="width:100%; margin-top:10px;" onclick="event.stopPropagation(); openSheet(' + idx + ')">Manage Pipeline &amp; DSA</button>' +
         '</div>' +
-      (chips ? ('<div class="chip-row">' + chips + '</div>') : '<div class="chip-row"><span class="chip process">No lenders in pipeline yet</span></div>') +
-        sentTo +
       '</div>';
   }).join("");
+}
+
+// Generic collapse/expand toggle used by lead, partner, and bank-channel cards.
+function toggleCardDetails(nameRowEl) {
+  var details = nameRowEl.nextElementSibling;
+  var caret = nameRowEl.querySelector(".caret");
+  if (!details) return;
+  details.classList.toggle("open");
+  if (caret) caret.classList.toggle("open");
 }
 
 function openSheet(idx) {
@@ -733,20 +830,74 @@ function renderPartners() {
   container.innerHTML = partners.map(function(p, i){
     var cleanMobile = String(p.mobile || "").replace(/\D/g,"");
     var count = p.last30Count || 0;
-    var rankTag = (i === 0 && count > 0) ? ' <span style="color:var(--gold); font-weight:800;">🏆 Top Partner</span>' : '';
-    var inactiveTag = p.inactive ? ' <span style="color:#B91C1C; font-weight:700; font-size:11px;">⚠ Inactive 30+ days</span>' : '';
+    var rankTag = (i === 0 && count > 0) ? ' <span style="color:var(--gold); font-weight:800;">🏆</span>' : '';
+    var inactiveTag = p.inactive ? ' <span style="color:#B91C1C; font-weight:700; font-size:11px;">⚠</span>' : '';
     return '' +
-      '<div class="partner-card">' +
-        '<div class="partner-info">' +
+      '<div class="partner-card" style="display:block;">' +
+        '<div class="name-row" onclick="toggleCardDetails(this)">' +
           '<div class="pname">' + escapeHtml(p.name || "—") + rankTag + inactiveTag + '</div>' +
+          '<span class="caret">\u25BC</span>' +
+        '</div>' +
+        '<div class="card-details">' +
           '<div class="pdetail">' + escapeHtml(p.mobile || "") + (p.email ? (' \u00B7 ' + escapeHtml(p.email)) : "") + '</div>' +
           '<div class="pdetail" style="margin-top:3px; color:var(--navy); font-weight:700;">' + count + ' application' + (count === 1 ? '' : 's') + ' \u00B7 last 30 days</div>' +
+          '<div class="partner-actions" style="margin-top:10px;" onclick="event.stopPropagation();">' +
+            (p.mobile ? ('<a class="icon-btn" href="tel:' + p.mobile + '">\u260E</a>') : "") +
+            (p.email ? ('<a class="icon-btn" href="mailto:' + p.email + '">\u2709</a>') : "") +
+            (cleanMobile ? ('<a class="icon-btn whatsapp-icon" href="https://wa.me/91' + cleanMobile + '" target="_blank" rel="noopener" title="WhatsApp">\u2713</a>') : "") +
+            (p.chequeLink ? ('<a class="icon-btn folder-icon" href="' + p.chequeLink + '" target="_blank" rel="noopener" title="View Cancelled Cheque">\uD83D\uDCC1</a>') : "") +
+          '</div>' +
         '</div>' +
-        '<div class="partner-actions">' +
-          (p.mobile ? ('<a class="icon-btn" href="tel:' + p.mobile + '">\u260E</a>') : "") +
-          (p.email ? ('<a class="icon-btn" href="mailto:' + p.email + '">\u2709</a>') : "") +
-          (cleanMobile ? ('<a class="icon-btn whatsapp-icon" href="https://wa.me/91' + cleanMobile + '" target="_blank" rel="noopener" title="WhatsApp">\u2713</a>') : "") +
-          (p.chequeLink ? ('<a class="icon-btn folder-icon" href="' + p.chequeLink + '" target="_blank" rel="noopener" title="View Cancelled Cheque">\uD83D\uDCC1</a>') : "") +
+      '</div>';
+  }).join("");
+}
+
+function renderBankChannel() {
+  var qEl = document.getElementById("bankChannelSearchBox");
+  var statusEl = document.getElementById("bankChannelStatusFilter");
+  var container = document.getElementById("bankChannelContainer");
+  var q = ((qEl && qEl.value) || "").toLowerCase();
+  var statusF = statusEl ? statusEl.value : "";
+
+  var logs = ALL_BANK_LOGS.filter(function(r){
+    if (statusF && r.fileStatus !== statusF) return false;
+    if (q) {
+      var hay = ((r.customerName||"") + " " + (r.bankerEmail||"") + " " + (r.cpName||"") + " " + (r.bankName||"")).toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+  // Backend already sorts latest-first by real timestamp; this filter preserves that order.
+
+  if (logs.length === 0) {
+    container.innerHTML = '<div class="empty-state">No bank channel business logged yet.</div>';
+    return;
+  }
+
+  container.innerHTML = logs.map(function(r){
+    var isCP = !!r.cpName;
+    var displayName = isCP
+      ? '<span class="cp-prefix">' + escapeHtml(r.cpName) + '</span> — ' + escapeHtml(r.customerName || "—")
+      : escapeHtml(r.customerName || "—");
+    var statusClass = r.fileStatus === 'Disbursed' ? 'status-disbursed' : (r.fileStatus === 'Policy Rejected' ? 'status-rejected' : 'status-process');
+
+    return '' +
+      '<div class="lead-card ' + statusClass + '">' +
+        '<div class="name-row" onclick="toggleCardDetails(this)">' +
+          '<div class="lead-name">' + displayName + '</div>' +
+          '<span class="caret">\u25BC</span>' +
+        '</div>' +
+        '<div class="card-details">' +
+          '<div class="lead-meta">' +
+            '<span>' + escapeHtml(r.bankName || "—") + ' \u00B7 ' + escapeHtml(r.loanType || "—") + '</span>' +
+            '<span>' + escapeHtml(r.customerMobile || "") + '</span>' +
+            '<span class="partner-tag">Code: ' + escapeHtml(r.vmwCode || "—") + '</span>' +
+            '<span class="partner-tag">Banker: ' + escapeHtml(r.bankerEmail || "—") + '</span>' +
+          '</div>' +
+          '<div class="chip-row"><span class="chip ' + chipClass(r.fileStatus === 'Policy Rejected' ? 'Rejected' : (r.fileStatus === 'Disbursed' ? 'Disbursed' : 'In Process')) + '">' + escapeHtml(r.fileStatus || "—") + '</span></div>' +
+          (r.rejectionReason ? ('<div class="sent-to-line">Rejection reason: <b>' + escapeHtml(r.rejectionReason) + '</b></div>') : "") +
+          (r.routingDecision ? ('<div class="sent-to-line">Routed to (' + escapeHtml(r.routeType || '') + '): <b>' + escapeHtml(r.routingDecision) + '</b></div>') : "") +
+          (r.notes ? ('<div class="sent-to-line">Notes: ' + escapeHtml(r.notes) + '</div>') : "") +
         '</div>' +
       '</div>';
   }).join("");
@@ -759,11 +910,14 @@ document.getElementById("adminPassword").addEventListener("keydown", function(e)
 document.getElementById("refreshBtn").addEventListener("click", refreshAll);
 document.getElementById("tabBtnLeads").addEventListener("click", function(){ switchTab("leads"); });
 document.getElementById("tabBtnPartners").addEventListener("click", function(){ switchTab("partners"); });
+document.getElementById("tabBtnBankChannel").addEventListener("click", function(){ switchTab("bankchannel"); });
 document.getElementById("searchBox").addEventListener("input", renderLeads);
 document.getElementById("productFilter").addEventListener("change", renderLeads);
 document.getElementById("statusFilter").addEventListener("change", renderLeads);
 document.getElementById("docFilter").addEventListener("change", renderLeads);
 document.getElementById("partnerSearchBox").addEventListener("input", renderPartners);
+document.getElementById("bankChannelSearchBox").addEventListener("input", renderBankChannel);
+document.getElementById("bankChannelStatusFilter").addEventListener("change", renderBankChannel);
 document.getElementById("sheetBackdrop").addEventListener("click", closeSheet);
 document.getElementById("closeSheetBtn").addEventListener("click", closeSheet);
 document.getElementById("addLendersBtn").addEventListener("click", addSelectedLenders);
@@ -775,4 +929,3 @@ document.getElementById("showHiddenCheckbox").addEventListener("change", reloadL
 </script>
 </body>
 </html>
-

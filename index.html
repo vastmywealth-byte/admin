@@ -671,5 +671,10 @@ $("docFilter").addEventListener("change", renderLeads);
 $("stateFilter").addEventListener("input", renderLeads);
 $("showHiddenCheckbox").addEventListener("change", reloadLeadsOnly);
 </script>
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+</script>
 </body>
 </html>
